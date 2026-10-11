@@ -1,0 +1,453 @@
+local redzlib = loadstring(game:HttpGet("https://raw.githubusercontent.com/minhdepzai-v/LibraryRobloc/refs/heads/main/RedzLibrary.lua"))()
+
+local Services = {
+    Players = game:GetService("Players"),
+    RunService = game:GetService("RunService"),
+    UserInputService = game:GetService("UserInputService")
+}
+local LocalPlayer = Services.Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local Settings = {
+    Aimbot = false, IgnoreDead = false, FOVSize = 100, ShowFOV = false,
+    TeamCheck = false, WallCheck = false, LegitMode = false, Smoothing = 0.15,
+    FOVRainbow = false, FOVRainbowSpeed = 1, FOVColor = Color3.fromRGB(255,255,255),
+    Silent = false, SilentHitPart = "Head", SilentHitChance = 100, SilentFOV = 150,
+    SilentUseFOV = false, SilentTeamCheck = true, SilentWallCheck = false, SilentRandomize = false,
+    AutoShot = false, AutoShotDelay = 0.1, AutoShotRequireTarget = true,
+    ESP_Master = false, ESP_Boxes = false, ESP_Lines = false, ESP_Names = false,
+    ESP_Player = false, ESP_Ally = false, AllyColor = Color3.fromRGB(80,180,255),
+    HitboxEnabled = false, HitboxSize = 5, HitboxVisible = false,
+    HitboxParts = { Head = true, HumanoidRootPart = true },
+    Spinbot = false, EnableSpeed = false, Speed = 16
+}
+
+local CyanColor = Color3.fromRGB(255,255,255)
+local OriginalHitbox = {}
+local ESPDrawings = {}
+local AutoShotCooldown = 0
+local executorEscondido = false
+local guisEscondidos = {}
+
+local function ehChat(nome)
+    local n = nome:lower()
+    return n:find("chat") or n:find("bubble") or n:find("textchat")
+end
+
+local function definirVisibilidadeExecutor(visivel)
+    local executorGui = gethui and gethui() or game.CoreGui
+    if not executorGui then return end
+    if visivel then
+        for _, gui in pairs(guisEscondidos) do
+            pcall(function() gui.Enabled = true end)
+        end
+        guisEscondidos = {}
+    else
+        guisEscondidos = {}
+        for _, item in pairs(executorGui:GetChildren()) do
+            if item:IsA("ScreenGui") and not ehChat(item.Name) then
+                if item.Enabled then item.Enabled = false; table.insert(guisEscondidos, item) end
+            end
+        end
+        for _, item in pairs(game.CoreGui:GetChildren()) do
+            if item:IsA("ScreenGui") and item.Name ~= "LpModsFloatingButtonGui"
+                and item.Name ~= "LpModsTopBanner"
+                and not item.Name:find("redz") and not item.Name:find("Library")
+                and not ehChat(item.Name) then
+                if item.Enabled then item.Enabled = false; table.insert(guisEscondidos, item) end
+            end
+        end
+    end
+end
+
+local function AlternarExecutor()
+    executorEscondido = not executorEscondido
+    definirVisibilidadeExecutor(not executorEscondido)
+end
+
+local function checarGravadoresMobile()
+    if type(getrunningprocesses) == "function" then
+        local ok, procs = pcall(getrunningprocesses)
+        if ok and type(procs) == "table" then
+            for _, proc in pairs(procs) do
+                local n = tostring(proc):lower()
+                if n:find("recorder") or n:find("capture") or n:find("obs") then return true end
+            end
+        end
+    end
+    return false
+end
+
+local function IsAlly(player)
+    if not player or not player.Team then return false end
+    return player.Team == LocalPlayer.Team
+end
+
+local function HasLineOfSight(targetPart)
+    if not targetPart then return false end
+    local myChar = LocalPlayer.Character
+    local origin = Camera.CFrame.Position
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = { myChar, targetPart.Parent }
+    local result = workspace:Raycast(origin, targetPart.Position - origin, params)
+    return result == nil
+end
+
+local function ApplySpeed()
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.WalkSpeed = Settings.EnableSpeed and Settings.Speed or 16 end
+    end
+end
+
+Services.RunService.Stepped:Connect(function()
+    if Settings.EnableSpeed then
+        local char = LocalPlayer.Character
+        if char then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum and hum.WalkSpeed ~= Settings.Speed then hum.WalkSpeed = Settings.Speed end
+        end
+    end
+end)
+
+local function ApplyHitbox(player)
+    local char = player.Character
+    if not char then return end
+    if not OriginalHitbox[player] then OriginalHitbox[player] = {} end
+    local orig = OriginalHitbox[player]
+    local mult = Settings.HitboxSize
+
+    for _, partName in pairs({"Head","HumanoidRootPart","UpperTorso","LowerTorso","LeftArm","RightArm","LeftHand","RightHand","LeftLeg","RightLeg","LeftFoot","RightFoot"}) do
+        local part = char:FindFirstChild(partName)
+        if part and part:IsA("BasePart") then
+            if not orig[partName] then
+                orig[partName] = { Size = part.Size, Transparency = part.Transparency, CanCollide = part.CanCollide }
+            end
+            if Settings.HitboxParts[partName] then
+                local o = orig[partName]
+                part.Size = Vector3.new(o.Size.X * mult, o.Size.Y * mult, o.Size.Z * mult)
+                part.Transparency = Settings.HitboxVisible and 0.5 or 1
+                part.CanCollide = false
+            end
+        end
+    end
+end
+
+local function RestoreHitbox(player)
+    local char = player.Character
+    local orig = OriginalHitbox[player]
+    if not char or not orig then return end
+    for partName, o in pairs(orig) do
+        local part = char:FindFirstChild(partName)
+        if part and part:IsA("BasePart") then
+            part.Size = o.Size
+            part.Transparency = o.Transparency
+            part.CanCollide = o.CanCollide
+        end
+    end
+    OriginalHitbox[player] = nil
+end
+
+local function RestoreAllHitboxes()
+    for player, _ in pairs(OriginalHitbox) do RestoreHitbox(player) end
+    OriginalHitbox = {}
+end
+
+Services.RunService.Heartbeat:Connect(function()
+    for _, player in pairs(Services.Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            if Settings.HitboxEnabled then
+                ApplyHitbox(player)
+            elseif OriginalHitbox[player] then
+                RestoreHitbox(player)
+            end
+        end
+    end
+end)
+
+Services.Players.PlayerRemoving:Connect(function(player)
+    OriginalHitbox[player] = nil
+    if ESPDrawings[player] then
+        for _, v in pairs(ESPDrawings[player]) do v:Remove() end
+        ESPDrawings[player] = nil
+    end
+end)
+
+local function GetClosestPlayer(forSilent)
+    local Target, TargetPart = nil, nil
+    local MaxDistance = forSilent and Settings.SilentFOV or Settings.FOVSize
+    local CenterScreen = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    local usarFOV = not forSilent or Settings.SilentUseFOV
+
+    for _, player in pairs(Services.Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local char = player.Character
+            local head = char:FindFirstChild("Head")
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            local root = char:FindFirstChild("HumanoidRootPart")
+            local checkTeam = forSilent and Settings.SilentTeamCheck or (not forSilent and Settings.TeamCheck)
+            local checkWall = forSilent and Settings.SilentWallCheck or (not forSilent and Settings.WallCheck)
+
+            if head and hum and root then
+                if checkTeam and IsAlly(player) then continue end
+                if Settings.IgnoreDead then
+                    if hum.Health <= 0 or hum:GetState() == Enum.HumanoidStateType.Dead or not char:IsDescendantOf(workspace) then continue end
+                else
+                    if hum.Health <= 0 or hum:GetState() == Enum.HumanoidStateType.Dead then continue end
+                end
+                local aimPart = forSilent and (char:FindFirstChild(Settings.SilentHitPart) or head) or head
+                if checkWall and not HasLineOfSight(aimPart) then continue end
+                local headPos, onScreen = Camera:WorldToViewportPoint(aimPart.Position)
+                if onScreen or not usarFOV then
+                    local distance = onScreen and (Vector2.new(headPos.X, headPos.Y) - CenterScreen).Magnitude or 0
+                    if distance <= MaxDistance then
+                        MaxDistance = distance
+                        Target = player
+                        TargetPart = aimPart
+                    end
+                end
+            end
+        end
+    end
+    return Target, TargetPart
+end
+
+local mt = getrawmetatable(game)
+local oldNamecall = mt.__namecall
+setreadonly(mt, false)
+mt.__namecall = newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    if Settings.Silent and (method == "FindPartOnRay" or method == "FindPartOnRayWithIgnoreList" or method == "FindPartOnRayWithWhitelist" or method == "Raycast") then
+        local target, targetPart = GetClosestPlayer(true)
+        if target and targetPart then
+            if math.random(1, 100) > Settings.SilentHitChance then return oldNamecall(self, ...) end
+            local dest = targetPart.Position
+            if Settings.SilentRandomize then
+                dest = dest + Vector3.new(math.random(-50,50)/100, math.random(-50,50)/100, math.random(-50,50)/100)
+            end
+            local args = {...}
+            if method == "Raycast" then
+                args[2] = targetPart
+            else
+                local ray = args[1]
+                if typeof(ray) == "Ray" then
+                    local dir = (dest - ray.Origin).Unit * (ray.Direction.Magnitude > 0 and ray.Direction.Magnitude or 1000)
+                    args[1] = Ray.new(ray.Origin, dir)
+                end
+            end
+            return oldNamecall(self, table.unpack(args))
+        end
+    end
+    return oldNamecall(self, ...)
+end)
+setreadonly(mt, true)
+
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Color = Color3.fromRGB(255,255,255)
+FOVCircle.Thickness = 1.5
+FOVCircle.Filled = false
+FOVCircle.Transparency = 0.8
+FOVCircle.Visible = false
+
+local function CreateESP(player)
+    if ESPDrawings[player] then return end
+    local d = { Box = Drawing.new("Square"), Line = Drawing.new("Line"), Name = Drawing.new("Text") }
+    d.Box.Color = CyanColor; d.Box.Thickness = 1.5; d.Box.Filled = false
+    d.Line.Color = CyanColor; d.Line.Thickness = 1
+    d.Name.Color = CyanColor; d.Name.Size = 13; d.Name.Center = true; d.Name.Outline = true
+    ESPDrawings[player] = d
+end
+
+Services.RunService.RenderStepped:Connect(function()
+    local CenterScreen = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    FOVCircle.Position = CenterScreen
+    FOVCircle.Radius = Settings.ShowFOV and Settings.FOVSize or (Settings.SilentUseFOV and Settings.Silent and Settings.SilentFOV or Settings.FOVSize)
+    FOVCircle.Visible = Settings.ShowFOV or (Settings.SilentUseFOV and Settings.Silent)
+
+    if Settings.FOVRainbow then
+        FOVCircle.Color = Color3.fromHSV((tick() * Settings.FOVRainbowSpeed) % 1, 1, 1)
+    else
+        FOVCircle.Color = Settings.FOVColor
+    end
+
+    if Settings.Aimbot then
+        local target = GetClosestPlayer(false)
+        if target and target.Character then
+            local head = target.Character:FindFirstChild("Head")
+            local hum = target.Character:FindFirstChildOfClass("Humanoid")
+            if head and hum and hum.Health > 0 and not Settings.Silent then
+                if Settings.LegitMode then
+                    local current = Camera.CFrame
+                    local goal = CFrame.new(current.Position, head.Position)
+                    Camera.CFrame = current:Lerp(goal, math.clamp(Settings.Smoothing, 0.01, 1))
+                else
+                    Camera.CFrame = CFrame.new(Camera.CFrame.Position, head.Position)
+                end
+            end
+        end
+    end
+
+    if Settings.AutoShot and Settings.Silent then
+        local target = GetClosestPlayer(true)
+        if target or not Settings.AutoShotRequireTarget then
+            if tick() - AutoShotCooldown >= Settings.AutoShotDelay then
+                AutoShotCooldown = tick()
+                pcall(function()
+                    if type(mouse1click) == "function" then mouse1click()
+                    elseif type(keypress) == "function" and type(keyrelease) == "function" then
+                        keypress(0x01); task.delay(0.02, function() keyrelease(0x01) end)
+                    end
+                end)
+            end
+        end
+    end
+
+    if Settings.Spinbot and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        LocalPlayer.Character.HumanoidRootPart.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame * CFrame.Angles(0, math.rad(150), 0)
+    end
+
+    for _, player in pairs(Services.Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            if not ESPDrawings[player] then CreateESP(player) end
+            local d = ESPDrawings[player]
+            local char = player.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local ally = IsAlly(player)
+            local shouldRender = ally and Settings.ESP_Ally or (not ally and Settings.ESP_Master)
+
+            if shouldRender and char and hum and hum.Health > 0 then
+                local cframe, size = char:GetBoundingBox()
+                local screenPos, onScreen = Camera:WorldToViewportPoint(cframe.Position)
+                if onScreen then
+                    local rc = ally and Settings.AllyColor or CyanColor
+                    d.Box.Color = rc; d.Line.Color = rc; d.Name.Color = rc
+                    local topW = cframe.Position + Vector3.new(0, size.Y/2, 0)
+                    local botW = cframe.Position - Vector3.new(0, size.Y/2, 0)
+                    local topS = Camera:WorldToViewportPoint(topW)
+                    local botS = Camera:WorldToViewportPoint(botW)
+                    local h = math.abs(topS.Y - botS.Y)
+                    local w = h / 1.6
+
+                    if Settings.ESP_Boxes then
+                        d.Box.Size = Vector2.new(w, h)
+                        d.Box.Position = Vector2.new(screenPos.X - w/2, topS.Y)
+                        d.Box.Visible = true
+                    else d.Box.Visible = false end
+
+                    if Settings.ESP_Lines then
+                        d.Line.From = Vector2.new(Camera.ViewportSize.X/2, 0)
+                        d.Line.To = Vector2.new(screenPos.X, topS.Y)
+                        d.Line.Visible = true
+                    else d.Line.Visible = false end
+
+                    if Settings.ESP_Names then
+                        d.Name.Text = player.Name .. (ally and " [ALLY]" or "")
+                        d.Name.Position = Vector2.new(screenPos.X, topS.Y - 16)
+                        d.Name.Visible = true
+                    else d.Name.Visible = false end
+
+                    if Settings.ESP_Player then
+                        local hl = char:FindFirstChild("LpModsChams")
+                        if not hl then
+                            hl = Instance.new("Highlight")
+                            hl.Name = "LpModsChams"
+                            hl.FillTransparency = 0.5
+                            hl.OutlineTransparency = 0
+                            hl.Parent = char
+                        end
+                        hl.FillColor = rc; hl.OutlineColor = rc; hl.Enabled = true
+                    else
+                        if char:FindFirstChild("LpModsChams") then char.LpModsChams.Enabled = false end
+                    end
+                else
+                    d.Box.Visible = false; d.Line.Visible = false; d.Name.Visible = false
+                    if char:FindFirstChild("LpModsChams") then char.LpModsChams.Enabled = false end
+                end
+            else
+                d.Box.Visible = false; d.Line.Visible = false; d.Name.Visible = false
+                if char and char:FindFirstChild("LpModsChams") then char.LpModsChams.Enabled = false end
+            end
+        end
+    end
+end)
+
+LocalPlayer.Chatted:Connect(function(msg)
+    local cmd = msg:lower():gsub("^%s*(.-)%s*$", "%1")
+    if cmd == ".hub" then definirVisibilidadeExecutor(true); executorEscondido = false
+    elseif cmd == ".hide" then definirVisibilidadeExecutor(false); executorEscondido = true end
+end)
+
+Services.UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.RightShift then AlternarExecutor() end
+end)
+
+local Window = redzlib:MakeWindow({
+    Title = "LpMods",
+    SubTitle = "by LpMods",
+    SaveFolder = "LpMods | redz v5.lua"
+})
+
+Window:AddMinimizeButton({
+    Button = { Image = "rbxassetid://71014873973869", BackgroundTransparency = 0 },
+    Corner = { CornerRadius = UDim.new(35, 1) },
+})
+
+task.wait(0.5)
+
+local function AddCustomBackground(assetId)
+    local screenGui = nil
+    for _, gui in pairs(game.CoreGui:GetChildren()) do
+        if gui:IsA("ScreenGui") and (gui.Name:lower():find("redz") or gui.Name:lower():find("library")) then
+            screenGui = gui; break
+        end
+    end
+    if not screenGui then return end
+    local mainFrame = nil
+    for _, desc in pairs(screenGui:GetDescendants()) do
+        if desc:IsA("ImageButton") and desc.Name:lower():find("hub") then mainFrame = desc; break
+        elseif desc:IsA("Frame") and desc.Name:lower():find("main") then mainFrame = desc; break end
+    end
+    if not mainFrame then return end
+    local old = mainFrame:FindFirstChild("CustomBackground")
+    if old then old:Destroy() end
+    local bg = Instance.new("ImageLabel")
+    bg.Name = "CustomBackground"
+    bg.Size = UDim2.new(1,0,1,0); bg.Position = UDim2.new(0,0,0,0)
+    bg.BackgroundTransparency = 1
+    bg.Image = assetId
+    bg.ImageTransparency = 0.35
+    bg.ScaleType = Enum.ScaleType.Crop
+    bg.ZIndex = 0
+    bg.Parent = mainFrame
+end
+
+AddCustomBackground("rbxassetid://71014873973869")
+
+local CombatTab = Window:MakeTab({"Combate", "crosshair"})
+local SilentTab = Window:MakeTab({"Silent", "ghost"})
+local VisualsTab = Window:MakeTab({"Visuals", "eye"})
+local HitboxTab = Window:MakeTab({"Hitbox", "box"})
+local MovementTab = Window:MakeTab({"Movimento", "gauge"})
+local MiscTab = Window:MakeTab({"Misc", "settings"})
+local DiscordTab = Window:MakeTab({"Discord", "disc"})
+
+CombatTab:AddSection({"Aimbot"})
+CombatTab:AddToggle({ Name = "Aimbot Gruda na Cabeca", Default = false, Callback = function(v) Settings.Aimbot = v end })
+CombatTab:AddToggle({ Name = "Ignorar Mortos no Chao", Default = false, Callback = function(v) Settings.IgnoreDead = v end })
+CombatTab:AddToggle({ Name = "Mostrar FOV", Default = false, Callback = function(v) Settings.ShowFOV = v end })
+CombatTab:AddToggle({ Name = "Team Check", Default = false, Callback = function(v) Settings.TeamCheck = v end })
+CombatTab:AddToggle({ Name = "Wall Check", Default = false, Callback = function(v) Settings.WallCheck = v end })
+CombatTab:AddToggle({ Name = "Modo Legit", Default = false, Callback = function(v) Settings.LegitMode = v end })
+CombatTab:AddSlider({ Name = "Tamanho do FOV", Min = 30, Max = 500, Increase = 1, Default = 100, Callback = function(v) Settings.FOVSize = v end })
+CombatTab:AddSlider({ Name = "Suavizacao (Legit)", Min = 0.01, Max = 1, Increase = 0.01, Default = 0.15, Callback = function(v) Settings.Smoothing = v end })
+CombatTab:AddToggle({ Name = "FOV Rainbow", Default = false, Callback = function(v) Settings.FOVRainbow = v end })
+CombatTab:AddSlider({ Name = "Velocidade Rainbow", Min = 0.1, Max = 5, Increase = 0.1, Default = 1, Callback = function(v) Settings.FOVRainbowSpeed = v end })
+
+SilentTab:AddSection({"Silent Aim"})
+SilentTab:AddToggle({ Name = "Silent Aim", Default = false, Callback = function(v) Settings.Silent = v end })
+SilentTab:AddDropdown({
+    Name = "Parte do corpo",
+    Options = {"Head","HumanoidRootPart","UpperTorso","Low
