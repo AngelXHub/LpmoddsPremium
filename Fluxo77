@@ -1,4 +1,4 @@
-local redzlib = loadstring(game:HttpGet("https://raw.githubusercontent.com/minhdepzai-v/LibraryRobloc/refs/heads/main/RedzLibrary.lua"))()
+local Fluent = loadstring(game:HttpGet("https://raw.githubusercontent.com/StyearX/Fluent-modded/main/dist/main.lua"))()
 
 local Services = {
     Players = game:GetService("Players"),
@@ -50,10 +50,7 @@ local function definirVisibilidadeExecutor(visivel)
             end
         end
         for _, item in pairs(game.CoreGui:GetChildren()) do
-            if item:IsA("ScreenGui") and item.Name ~= "LpModsFloatingButtonGui"
-                and item.Name ~= "LpModsTopBanner"
-                and not item.Name:find("redz") and not item.Name:find("Library")
-                and not ehChat(item.Name) then
+            if item:IsA("ScreenGui") and not item.Name:find("Fluent") and not ehChat(item.Name) then
                 if item.Enabled then item.Enabled = false; table.insert(guisEscondidos, item) end
             end
         end
@@ -384,70 +381,132 @@ Services.UserInputService.InputBegan:Connect(function(input, gpe)
     if input.KeyCode == Enum.KeyCode.RightShift then AlternarExecutor() end
 end)
 
-local Window = redzlib:MakeWindow({
+local Window = Fluent:CreateWindow({
     Title = "LpMods",
     SubTitle = "by LpMods",
-    SaveFolder = "LpMods | redz v5.lua"
+    TabWidth = 140,
+    Size = UDim2.fromOffset(560, 400),
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.LeftControl
 })
 
-Window:AddMinimizeButton({
-    Button = { Image = "rbxassetid://71014873973869", BackgroundTransparency = 0 },
-    Corner = { CornerRadius = UDim.new(35, 1) },
+local Tabs = {
+    Combat  = Window:AddTab({ Title = "Combate", Icon = "crosshair" }),
+    Silent  = Window:AddTab({ Title = "Silent", Icon = "ghost" }),
+    Visuals = Window:AddTab({ Title = "Visuals", Icon = "eye" }),
+    Hitbox  = Window:AddTab({ Title = "Hitbox", Icon = "box" }),
+    Movement= Window:AddTab({ Title = "Movimento", Icon = "gauge" }),
+    Misc    = Window:AddTab({ Title = "Misc", Icon = "settings" }),
+    Discord = Window:AddTab({ Title = "Discord", Icon = "disc" })
+}
+
+Tabs.Combat:AddToggle("Aimbot", { Title = "Aimbot Gruda na Cabeca", Default = false, Callback = function(v) Settings.Aimbot = v end })
+Tabs.Combat:AddToggle("IgnoreDead", { Title = "Ignorar Mortos no Chao", Default = false, Callback = function(v) Settings.IgnoreDead = v end })
+Tabs.Combat:AddToggle("ShowFOV", { Title = "Mostrar FOV", Default = false, Callback = function(v) Settings.ShowFOV = v end })
+Tabs.Combat:AddToggle("TeamCheckCombat", { Title = "Team Check", Default = false, Callback = function(v) Settings.TeamCheck = v end })
+Tabs.Combat:AddToggle("WallCheckCombat", { Title = "Wall Check", Default = false, Callback = function(v) Settings.WallCheck = v end })
+Tabs.Combat:AddToggle("LegitMode", { Title = "Modo Legit", Default = false, Callback = function(v) Settings.LegitMode = v end })
+Tabs.Combat:AddSlider("FOVSize", { Title = "Tamanho do FOV", Min = 30, Max = 500, Default = 100, Rounding = 0, Callback = function(v) Settings.FOVSize = v end })
+Tabs.Combat:AddSlider("Smoothing", { Title = "Suavizacao (Legit)", Min = 0.01, Max = 1, Default = 0.15, Rounding = 2, Callback = function(v) Settings.Smoothing = v end })
+Tabs.Combat:AddToggle("FOVRainbow", { Title = "FOV Rainbow", Default = false, Callback = function(v) Settings.FOVRainbow = v end })
+Tabs.Combat:AddSlider("FOVRainbowSpeed", { Title = "Velocidade Rainbow", Min = 0.1, Max = 5, Default = 1, Rounding = 1, Callback = function(v) Settings.FOVRainbowSpeed = v end })
+
+Tabs.Silent:AddToggle("SilentAim", { Title = "Silent Aim", Default = false, Callback = function(v) Settings.Silent = v end })
+Tabs.Silent:AddDropdown("SilentHitPart", {
+    Title = "Parte do corpo",
+    Values = {"Head","HumanoidRootPart","UpperTorso","LowerTorso","LeftArm","RightArm","LeftHand","RightHand","LeftLeg","RightLeg","LeftFoot","RightFoot"},
+    Default = "Head",
+    Multi = false,
+    Callback = function(v) Settings.SilentHitPart = v end
 })
+Tabs.Silent:AddSlider("SilentHitChance", { Title = "Chance de acerto (%)", Min = 0, Max = 100, Default = 100, Rounding = 0, Callback = function(v) Settings.SilentHitChance = v end })
+Tabs.Silent:AddSlider("SilentFOV", { Title = "FOV do Silent", Min = 30, Max = 800, Default = 150, Rounding = 0, Callback = function(v) Settings.SilentFOV = v end })
+Tabs.Silent:AddToggle("SilentUseFOV", { Title = "Usar FOV proprio do Silent", Default = false, Callback = function(v) Settings.SilentUseFOV = v end })
+Tabs.Silent:AddToggle("SilentTeamCheck", { Title = "Team Check (Silent)", Default = true, Callback = function(v) Settings.SilentTeamCheck = v end })
+Tabs.Silent:AddToggle("SilentWallCheck", { Title = "Wall Check (Silent)", Default = false, Callback = function(v) Settings.SilentWallCheck = v end })
+Tabs.Silent:AddToggle("SilentRandomize", { Title = "Randomizar ponto", Default = false, Callback = function(v) Settings.SilentRandomize = v end })
+Tabs.Silent:AddToggle("AutoShot", { Title = "Auto Shot", Default = false, Callback = function(v) Settings.AutoShot = v end })
+Tabs.Silent:AddToggle("AutoShotRequireTarget", { Title = "So atirar com alvo", Default = true, Callback = function(v) Settings.AutoShotRequireTarget = v end })
+Tabs.Silent:AddSlider("AutoShotDelay", { Title = "Delay entre tiros (s)", Min = 0.02, Max = 1, Default = 0.1, Rounding = 2, Callback = function(v) Settings.AutoShotDelay = v end })
 
-task.wait(0.5)
+Tabs.Visuals:AddToggle("ESPMaster", { Title = "Ativar ESP (Master)", Default = false, Callback = function(v) Settings.ESP_Master = v end })
+Tabs.Visuals:AddToggle("ESPBoxes", { Title = "ESP Boxes", Default = false, Callback = function(v) Settings.ESP_Boxes = v end })
+Tabs.Visuals:AddToggle("ESPLines", { Title = "ESP Lines", Default = false, Callback = function(v) Settings.ESP_Lines = v end })
+Tabs.Visuals:AddToggle("ESPNames", { Title = "ESP Name", Default = false, Callback = function(v) Settings.ESP_Names = v end })
+Tabs.Visuals:AddToggle("ESPPlayer", { Title = "ESP Player", Default = false, Callback = function(v) Settings.ESP_Player = v end })
+Tabs.Visuals:AddToggle("ESPAlly", { Title = "ESP Aliado", Default = false, Callback = function(v) Settings.ESP_Ally = v end })
 
-local function AddCustomBackground(assetId)
-    local screenGui = nil
-    for _, gui in pairs(game.CoreGui:GetChildren()) do
-        if gui:IsA("ScreenGui") and (gui.Name:lower():find("redz") or gui.Name:lower():find("library")) then
-            screenGui = gui; break
+Tabs.Hitbox:AddToggle("HitboxEnabled", {
+    Title = "Ativar Hitbox Expandida", Default = false,
+    Callback = function(v)
+        Settings.HitboxEnabled = v
+        if not v then RestoreAllHitboxes() end
+    end
+})
+Tabs.Hitbox:AddDropdown("HitboxPartsDropdown", {
+    Title = "Partes para expandir",
+    Values = {"Head","HumanoidRootPart","UpperTorso","LowerTorso","LeftArm","RightArm","LeftHand","RightHand","LeftLeg","RightLeg","LeftFoot","RightFoot"},
+    Default = {"Head","HumanoidRootPart"},
+    Multi = true,
+    Callback = function(v)
+        Settings.HitboxParts = {}
+        for part, _ in pairs(v) do
+            Settings.HitboxParts[part] = true
         end
     end
-    if not screenGui then return end
-    local mainFrame = nil
-    for _, desc in pairs(screenGui:GetDescendants()) do
-        if desc:IsA("ImageButton") and desc.Name:lower():find("hub") then mainFrame = desc; break
-        elseif desc:IsA("Frame") and desc.Name:lower():find("main") then mainFrame = desc; break end
+})
+Tabs.Hitbox:AddSlider("HitboxSize", { Title = "Tamanho da Hitbox", Min = 1, Max = 20, Default = 5, Rounding = 1, Callback = function(v) Settings.HitboxSize = v end })
+Tabs.Hitbox:AddToggle("HitboxVisible", { Title = "Mostrar Hitbox (visual)", Default = false, Callback = function(v) Settings.HitboxVisible = v end })
+Tabs.Hitbox:AddButton({ Title = "Restaurar Hitboxes", Description = "Volta tudo pro tamanho original", Callback = function() RestoreAllHitboxes() end })
+
+Tabs.Movement:AddToggle("EnableSpeed", { Title = "Ativar Velocidade", Default = false, Callback = function(v) Settings.EnableSpeed = v; ApplySpeed() end })
+Tabs.Movement:AddSlider("Speed", { Title = "Aumentar Velocidade", Min = 16, Max = 300, Default = 16, Rounding = 0, Callback = function(v) Settings.Speed = v; ApplySpeed() end })
+Tabs.Movement:AddToggle("Spinbot", { Title = "Spinbot", Default = false, Callback = function(v) Settings.Spinbot = v end })
+
+Tabs.Misc:AddToggle("EsconderExecutor", {
+    Title = "Esconder Executor", Default = false,
+    Callback = function(v)
+        executorEscondido = v
+        definirVisibilidadeExecutor(not v)
     end
-    if not mainFrame then return end
-    local old = mainFrame:FindFirstChild("CustomBackground")
-    if old then old:Destroy() end
-    local bg = Instance.new("ImageLabel")
-    bg.Name = "CustomBackground"
-    bg.Size = UDim2.new(1,0,1,0); bg.Position = UDim2.new(0,0,0,0)
-    bg.BackgroundTransparency = 1
-    bg.Image = assetId
-    bg.ImageTransparency = 0.35
-    bg.ScaleType = Enum.ScaleType.Crop
-    bg.ZIndex = 0
-    bg.Parent = mainFrame
-end
+})
+Tabs.Misc:AddButton({
+    Title = "Alternar Executor",
+    Description = "RightShift ou .hub no chat",
+    Callback = function() AlternarExecutor() end
+})
+Tabs.Misc:AddButton({
+    Title = "Anti-Gravacao - Scan",
+    Callback = function()
+        local achou = checarGravadoresMobile()
+        Fluent:Notify({
+            Title = "Anti-Gravacao",
+            Content = achou and "Gravador detectado!" or "Nada detectado.",
+            Duration = 4
+        })
+    end
+})
 
-AddCustomBackground("rbxassetid://71014873973869")
+Tabs.Discord:AddButton({
+    Title = "Copiar Link do Discord",
+    Description = "https://discord.gg/zSQPNz8",
+    Callback = function()
+        setclipboard("https://discord.gg/zSQPNz8")
+        Fluent:Notify({ Title = "LpMods", Content = "Link copiado!", Duration = 3 })
+    end
+})
 
-local CombatTab = Window:MakeTab({"Combate", "crosshair"})
-local SilentTab = Window:MakeTab({"Silent", "ghost"})
-local VisualsTab = Window:MakeTab({"Visuals", "eye"})
-local HitboxTab = Window:MakeTab({"Hitbox", "box"})
-local MovementTab = Window:MakeTab({"Movimento", "gauge"})
-local MiscTab = Window:MakeTab({"Misc", "settings"})
-local DiscordTab = Window:MakeTab({"Discord", "disc"})
+task.spawn(function()
+    task.wait(1)
+    for _, gui in pairs(game.CoreGui:GetChildren()) do
+        if gui:IsA("ScreenGui") and gui.Name:find("Fluent") then
+            for _, v in pairs(gui:GetDescendants()) do
+                if v:IsA("Frame") and (v.Name:find("Slider") or v.Name:find("Bar")) then
+                    v.Active = true
+                end
+            end
+        end
+    end
+end)
 
-CombatTab:AddSection({"Aimbot"})
-CombatTab:AddToggle({ Name = "Aimbot Gruda na Cabeca", Default = false, Callback = function(v) Settings.Aimbot = v end })
-CombatTab:AddToggle({ Name = "Ignorar Mortos no Chao", Default = false, Callback = function(v) Settings.IgnoreDead = v end })
-CombatTab:AddToggle({ Name = "Mostrar FOV", Default = false, Callback = function(v) Settings.ShowFOV = v end })
-CombatTab:AddToggle({ Name = "Team Check", Default = false, Callback = function(v) Settings.TeamCheck = v end })
-CombatTab:AddToggle({ Name = "Wall Check", Default = false, Callback = function(v) Settings.WallCheck = v end })
-CombatTab:AddToggle({ Name = "Modo Legit", Default = false, Callback = function(v) Settings.LegitMode = v end })
-CombatTab:AddSlider({ Name = "Tamanho do FOV", Min = 30, Max = 500, Increase = 1, Default = 100, Callback = function(v) Settings.FOVSize = v end })
-CombatTab:AddSlider({ Name = "Suavizacao (Legit)", Min = 0.01, Max = 1, Increase = 0.01, Default = 0.15, Callback = function(v) Settings.Smoothing = v end })
-CombatTab:AddToggle({ Name = "FOV Rainbow", Default = false, Callback = function(v) Settings.FOVRainbow = v end })
-CombatTab:AddSlider({ Name = "Velocidade Rainbow", Min = 0.1, Max = 5, Increase = 0.1, Default = 1, Callback = function(v) Settings.FOVRainbowSpeed = v end })
-
-SilentTab:AddSection({"Silent Aim"})
-SilentTab:AddToggle({ Name = "Silent Aim", Default = false, Callback = function(v) Settings.Silent = v end })
-SilentTab:AddDropdown({
-    Name = "Parte do corpo",
-    Options = {"Head","HumanoidRootPart","UpperTorso","Low
+Window:SelectTab(1)
