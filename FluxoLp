@@ -10,8 +10,7 @@ local Services = {
     Players = game:GetService("Players"),
     RunService = game:GetService("RunService"),
     UserInputService = game:GetService("UserInputService"),
-    CoreGui = game:GetService("CoreGui"),
-    VirtualUser = game:GetService("VirtualUser")
+    CoreGui = game:GetService("CoreGui")
 }
 
 local LocalPlayer = Services.Players.LocalPlayer
@@ -72,7 +71,7 @@ safe(function()
     local MiscTab = Window:CreateTab({ name = "Misc", icon = 0 })
     local PremiumTab = nil
     if isPremium then
-        PremiumTab = Window:CreateTab({ name = "PREMIUM", icon = 0 })
+        PremiumTab = Window:CreateTab({ name = "Premium", icon = 0 })
     end
 
     local function ehChat(n)
@@ -217,7 +216,6 @@ safe(function()
     FOVCircle.Transparency = 0.8
     FOVCircle.Visible = false
 
-    -- SILENT AIM (FireServer hook)
     local mt = getrawmetatable(game)
     local oldNamecall = mt.__namecall
     setreadonly(mt, false)
@@ -255,7 +253,6 @@ safe(function()
     end)
     setreadonly(mt, true)
 
-    -- Aimbot + Aimkill
     Services.RunService.RenderStepped:Connect(function()
         local cam = workspace.CurrentCamera
         if not cam then return end
@@ -263,7 +260,7 @@ safe(function()
         FOVCircle.Radius = Settings.FOVSize
         FOVCircle.Visible = Settings.ShowFOV
 
-        if Settings.Aimbot then
+        if Settings.Aimbot and not (isPremium and Settings.Aimkill) then
             local t = GetTarget()
             if t and t.Character then
                 local part = t.Character:FindFirstChild(Settings.AimPart)
@@ -278,14 +275,12 @@ safe(function()
             end
         end
 
-        -- AIMKILL: trava na cabeça + atira automaticamente
         if isPremium and Settings.Aimkill then
             local t = GetTarget()
             if t and t.Character then
                 local h = t.Character:FindFirstChildOfClass("Humanoid")
                 local part = t.Character:FindFirstChild(Settings.AimPart)
                 if h and h.Health > 0 and part then
-                    -- trava na cabeça
                     local aimPos = part.Position
                     if Settings.Prediction then
                         local hrp = t.Character:FindFirstChild("HumanoidRootPart")
@@ -293,19 +288,16 @@ safe(function()
                     end
                     cam.CFrame = cam.CFrame:Lerp(CFrame.new(cam.CFrame.Position, aimPos), 1)
 
-                    -- auto fire
                     if tick() - lastShot >= Settings.AimkillDelay then
                         lastShot = tick()
                         fireWeapon()
                     end
 
-                    -- gerencia alvo do aimkill
                     if aimkillTarget ~= t then
                         aimkillTarget = t
                         aimkillStart = tick()
                     end
 
-                    -- auto-stop após X segundos de foco
                     if Settings.AimkillAutoStop and (tick() - aimkillStart) >= Settings.AimkillKillTime then
                         aimkillTarget = nil
                         task.wait(0.5)
@@ -319,7 +311,6 @@ safe(function()
         end
     end)
 
-    -- ESP
     local ESPDrawings = {}
     local function CreateESP(player)
         if ESPDrawings[player] then return end
@@ -408,7 +399,6 @@ safe(function()
         end
     end)
 
-    -- Hitbox
     local function ApplyHitbox(p)
         local char = p.Character
         if not char then return end
@@ -465,7 +455,6 @@ safe(function()
 
     Services.Players.PlayerRemoving:Connect(function(p) OriginalHitbox[p] = nil end)
 
-    -- Speed / NoClip
     Services.RunService.Stepped:Connect(function()
         local char = LocalPlayer.Character
         if not char then return end
@@ -478,7 +467,6 @@ safe(function()
         end
     end)
 
-    -- Discord button topo centrado
     local DiscordGui = Instance.new("ScreenGui")
     DiscordGui.Name = "LpModsDiscordBtn"
     DiscordGui.ResetOnSpawn = false
@@ -531,7 +519,6 @@ safe(function()
         task.delay(2, function() DBtn.Text = "discord.gg/Pga8XBq" end)
     end)
 
-    -- Combate
     safe(function()
         CombatTab:CreateToggle({ name = "Aimbot (Lock na cabeca)", flag = "Aimbot", value = false, callback = function(v) Settings.Aimbot = v end })
         CombatTab:CreateToggle({ name = "Team Check", flag = "TeamCheck", value = true, callback = function(v) Settings.TeamCheck = v end })
@@ -549,7 +536,6 @@ safe(function()
         CombatTab:CreateToggle({ name = "Prediction", flag = "Prediction", value = false, callback = function(v) Settings.Prediction = v end })
     end)
 
-    -- Aba Premium (só aparece pra quem tem acesso)
     if isPremium and PremiumTab then
         safe(function()
             PremiumTab:CreateToggle({
@@ -612,7 +598,6 @@ safe(function()
         end)
     end
 
-    -- Visuals
     safe(function()
         VisualsTab:CreateToggle({ name = "ESP Master", flag = "ESPMaster", value = false, callback = function(v) Settings.ESP_Master = v end })
         VisualsTab:CreateToggle({ name = "ESP Aliado", flag = "ESPAlly", value = false, callback = function(v) Settings.ESP_Ally = v end })
@@ -622,7 +607,6 @@ safe(function()
         VisualsTab:CreateToggle({ name = "ESP Vida", flag = "ESPHealth", value = false, callback = function(v) Settings.ESP_Health = v end })
     end)
 
-    -- Hitbox
     safe(function()
         HitboxTab:CreateToggle({
             name = "Ativar Hitbox Expandida", flag = "HitboxEnabled", value = false,
@@ -636,7 +620,6 @@ safe(function()
         HitboxTab:CreateButton({ name = "Restaurar Hitboxes", callback = function() RestoreAll() end })
     end)
 
-    -- Misc
     safe(function()
         MiscTab:CreateToggle({ name = "Speed", flag = "Speed", value = false, callback = function(v) Settings.Speed = v end })
         MiscTab:CreateSlider({ name = "Velocidade", flag = "SpeedValue", range = {16, 300}, increment = 1, value = 16, callback = function(v) Settings.SpeedValue = v end })
