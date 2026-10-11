@@ -95,7 +95,7 @@ local function definirVisibilidadeExecutor(visivel)
         for _, item in pairs(game.CoreGui:GetChildren()) do
             if item:IsA("ScreenGui")
                 and item.Name ~= "LpModsFloatingButtonGui"
-                and item.Name ~= "LpModsTopBanner"
+                and item.Name ~= "LpModsDiscordBtn"
                 and item.Name ~= "LpModsGhostBtn"
                 and not item.Name:find("Fluent")
                 and not ehChat(item.Name) then
@@ -149,58 +149,6 @@ pcall(function()
         end)
     end
 end)
-
-local BannerGui = Instance.new("ScreenGui")
-BannerGui.Name = "LpModsTopBanner"
-BannerGui.ResetOnSpawn = false
-BannerGui.IgnoreGuiInset = true
-BannerGui.DisplayOrder = 999999
-
-if syn and syn.protect_gui then
-    syn.protect_gui(BannerGui); BannerGui.Parent = game.CoreGui
-elseif gethui then
-    BannerGui.Parent = gethui()
-else
-    BannerGui.Parent = game.CoreGui
-end
-
-local Banner = Instance.new("TextButton")
-Banner.Name = "BannerDiscord"
-Banner.Parent = BannerGui
-Banner.Size = UDim2.new(1, 0, 0, 30)
-Banner.Position = UDim2.new(0, 0, 0, 0)
-Banner.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-Banner.BackgroundTransparency = 0.15
-Banner.BorderSizePixel = 0
-Banner.Text = "discord.gg/Pga8XBq   -   clique para copiar"
-Banner.Font = Enum.Font.GothamBold
-Banner.TextSize = 14
-Banner.TextColor3 = Color3.fromRGB(255, 255, 255)
-Banner.AutoButtonColor = true
-Banner.Active = true
-
-local BannerStroke = Instance.new("UIStroke")
-BannerStroke.Color = Color3.fromRGB(88, 101, 242)
-BannerStroke.Thickness = 1
-BannerStroke.Transparency = 0.2
-BannerStroke.Parent = Banner
-
-Banner.MouseButton1Click:Connect(function()
-    setclipboard("https://discord.gg/Pga8XBq")
-    Banner.Text = "copiado!  -  discord.gg/Pga8XBq"
-    task.delay(2, function()
-        Banner.Text = "discord.gg/Pga8XBq   -   clique para copiar"
-    end)
-end)
-
-local function AjustarEscalaBanner()
-    local vp = Camera and Camera.ViewportSize or Vector2.new(1920, 1080)
-    Banner.TextSize = math.clamp(math.floor(vp.X / 100), 12, 20)
-end
-AjustarEscalaBanner()
-if Camera then
-    Camera:GetPropertyChangedSignal("ViewportSize"):Connect(AjustarEscalaBanner)
-end
 
 local function ApplyHitbox(player)
     local char = player.Character
@@ -475,6 +423,74 @@ Services.RunService.Stepped:Connect(function()
             hrp:SetNetworkOwner(nil)
         end)
     end
+end)
+
+local DiscordBtnGui = Instance.new("ScreenGui")
+DiscordBtnGui.Name = "LpModsDiscordBtn"
+DiscordBtnGui.ResetOnSpawn = false
+DiscordBtnGui.IgnoreGuiInset = true
+DiscordBtnGui.DisplayOrder = 999999
+if syn and syn.protect_gui then
+    syn.protect_gui(DiscordBtnGui); DiscordBtnGui.Parent = game.CoreGui
+elseif gethui then
+    DiscordBtnGui.Parent = gethui()
+else
+    DiscordBtnGui.Parent = game.CoreGui
+end
+
+local DiscordBtn = Instance.new("TextButton")
+DiscordBtn.Name = "DiscordBtn"
+DiscordBtn.Parent = DiscordBtnGui
+DiscordBtn.Size = UDim2.fromOffset(210, 34)
+DiscordBtn.Position = UDim2.new(1, -220, 1, -44)
+DiscordBtn.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+DiscordBtn.BackgroundTransparency = 0.3
+DiscordBtn.BorderSizePixel = 0
+DiscordBtn.Text = "discord.gg/Pga8XBq"
+DiscordBtn.Font = Enum.Font.GothamBold
+DiscordBtn.TextSize = 14
+DiscordBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+DiscordBtn.AutoButtonColor = false
+DiscordBtn.Active = true
+DiscordBtn.Selectable = true
+
+local DBCorner = Instance.new("UICorner")
+DBCorner.CornerRadius = UDim.new(0, 8)
+DBCorner.Parent = DiscordBtn
+
+local DBStroke = Instance.new("UIStroke")
+DBStroke.Color = Color3.fromRGB(88, 101, 242)
+DBStroke.Thickness = 1.5
+DBStroke.Transparency = 0.2
+DBStroke.Parent = DiscordBtn
+
+local DBGradient = Instance.new("UIGradient")
+DBGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+    ColorSequenceKeypoint.new(0.17, Color3.fromRGB(255, 165, 0)),
+    ColorSequenceKeypoint.new(0.33, Color3.fromRGB(255, 255, 0)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 0)),
+    ColorSequenceKeypoint.new(0.67, Color3.fromRGB(0, 200, 255)),
+    ColorSequenceKeypoint.new(0.83, Color3.fromRGB(100, 0, 255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 200))
+})
+DBGradient.Parent = DiscordBtn
+
+task.spawn(function()
+    while DiscordBtn.Parent do
+        task.wait(0.03)
+        DBGradient.Offset = Vector2.new((tick() * 0.3) % 1, 0)
+        local pulse = math.abs(math.sin(tick() * 2))
+        DBStroke.Transparency = 0.1 + (pulse * 0.4)
+    end
+end)
+
+DiscordBtn.MouseButton1Click:Connect(function()
+    setclipboard("https://discord.gg/Pga8XBq")
+    DiscordBtn.Text = "COPIADO!"
+    task.delay(2, function()
+        DiscordBtn.Text = "discord.gg/Pga8XBq"
+    end)
 end)
 
 local function IsAlly(player)
