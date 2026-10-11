@@ -23,11 +23,9 @@ local PREMIUM_USERS = {
 local isPremium = PREMIUM_USERS[LocalPlayer.Name] == true or LocalPlayer.UserId == 11242088349
 
 local Settings = {
-    Aimbot = false, AimPart = "Head", FOVSize = 120, ShowFOV = true,
-    Smoothness = 0.35, TeamCheck = true, WallCheck = false,
+    Aimbot = false, AimPart = "Head", FOVSize = 120, ShowFOV = false,
+    TeamCheck = false, WallCheck = false, IgnoreDead = false,
     Silent = false, SilentHitPart = "Head", SilentChance = 100, SilentRange = 1000,
-    Prediction = false, PredictionAmount = 0.15,
-    Aimkill = false, AimkillDelay = 0.08, AimkillKillTime = 3, AimkillAutoStop = true,
     ESP_Master = false, ESP_Boxes = false, ESP_Lines = false, ESP_Names = false,
     ESP_Health = false, ESP_Ally = false, AllyColor = Color3.fromRGB(80, 180, 255),
     HitboxEnabled = false, HitboxSize = 5, HitboxVisible = false, HitboxTransparency = 0.5,
@@ -38,9 +36,6 @@ local Settings = {
 local OriginalHitbox = {}
 local executorEscondido = false
 local guisEscondidos = {}
-local aimkillTarget = nil
-local aimkillStart = 0
-local lastShot = 0
 
 safe(function()
     local Window = Rayfield:CreateWindow({
@@ -124,43 +119,44 @@ safe(function()
         return r == nil
     end
 
-    local CurrentTarget
-    local function GetTarget()
-        local cam = workspace.CurrentCamera
-        if not cam then return nil end
+    -- AIMBOT do FluxoPvP original (mais simples, sem smooth)
+    local function GetClosestPlayer()
+        local Target = nil
+        local MaxDistance = Settings.FOVSize
+        local CenterScreen = Vector2.new(workspace.CurrentCamera.ViewportSize.X / 2, workspace.CurrentCamera.ViewportSize.Y / 2)
 
-        if CurrentTarget and CurrentTarget.Character then
-            local h = CurrentTarget.Character:FindFirstChildOfClass("Humanoid")
-            if h and h.Health > 0 then return CurrentTarget end
-        end
-        CurrentTarget = nil
+        for _, player in pairs(Services.Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local char = player.Character
+                local head = char:FindFirstChild("Head")
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                local rootPart = char:FindFirstChild("HumanoidRootPart")
 
-        local closest, shortest = nil, Settings.FOVSize
-        local mouse = Services.UserInputService:GetMouseLocation()
-        local char = LocalPlayer.Character
+                if head and humanoid and rootPart then
+                    if Settings.TeamCheck and IsAlly(player) then continue end
+                    if Settings.IgnoreDead then
+                        if humanoid.Health <= 0 or humanoid:GetState() == Enum.HumanoidStateType.Dead or not char:IsDescendantOf(workspace) then
+                            continue
+                        end
+                    else
+                        if humanoid.Health <= 0 or humanoid:GetState() == Enum.HumanoidStateType.Dead then
+                            continue
+                        end
+                    end
+                    if Settings.WallCheck and not HasLOS(head) then continue end
 
-        for _, p in ipairs(Services.Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.Character then
-                local h = p.Character:FindFirstChildOfClass("Humanoid")
-                if h and h.Health > 0 then
-                    if Settings.TeamCheck and IsAlly(p) then continue end
-                    local part = p.Character:FindFirstChild(Settings.AimPart)
-                    if part then
-                        if Settings.WallCheck and char and not HasLOS(part) then continue end
-                        local sp, on = cam:WorldToViewportPoint(part.Position)
-                        if on then
-                            local d = (Vector2.new(sp.X, sp.Y) - Vector2.new(mouse.X, mouse.Y)).Magnitude
-                            if d < shortest then
-                                shortest = d
-                                closest = p
-                            end
+                    local headPos, onScreen = workspace.CurrentCamera:WorldToViewportPoint(head.Position)
+                    if onScreen then
+                        local distance = (Vector2.new(headPos.X, headPos.Y) - CenterScreen).Magnitude
+                        if distance <= MaxDistance then
+                            MaxDistance = distance
+                            Target = player
                         end
                     end
                 end
             end
         end
-        CurrentTarget = closest
-        return closest
+        return Target
     end
 
     local function GetSilentTarget()
@@ -192,22 +188,6 @@ safe(function()
         return closest
     end
 
-    local function fireWeapon()
-        pcall(function()
-            if type(mouse1click) == "function" then
-                mouse1click()
-            elseif type(mouse1press) == "function" and type(mouse1release) == "function" then
-                mouse1press()
-                task.wait(0.02)
-                mouse1release()
-            elseif type(keypress) == "function" and type(keyrelease) == "function" then
-                keypress(0x01)
-                task.wait(0.02)
-                keyrelease(0x01)
-            end
-        end)
-    end
-
     local FOVCircle = Drawing.new("Circle")
     FOVCircle.Color = Color3.fromRGB(255, 255, 255)
     FOVCircle.Thickness = 1.5
@@ -228,10 +208,6 @@ safe(function()
                 if part then
                     if math.random(1, 100) > Settings.SilentChance then return oldNamecall(self, ...) end
                     local aimPos = part.Position
-                    if Settings.Prediction then
-                        local hrp = target.Character:FindFirstChild("HumanoidRootPart")
-                        if hrp then aimPos = aimPos + hrp.AssemblyLinearVelocity * Settings.PredictionAmount end
-                    end
                     local args = {...}
                     local changed = false
                     for i, v in ipairs(args) do
@@ -256,57 +232,27 @@ safe(function()
     Services.RunService.RenderStepped:Connect(function()
         local cam = workspace.CurrentCamera
         if not cam then return end
+
         FOVCircle.Position = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
         FOVCircle.Radius = Settings.FOVSize
         FOVCircle.Visible = Settings.ShowFOV
 
-        if Settings.Aimbot and not (isPremium and Settings.Aimkill) then
-            local t = GetTarget()
-            if t and t.Character then
-                local part = t.Character:FindFirstChild(Settings.AimPart)
-                if part then
-                    local aimPos = part.Position
-                    if Settings.Prediction then
-                        local hrp = t.Character:FindFirstChild("HumanoidRootPart")
-                        if hrp then aimPos = aimPos + hrp.AssemblyLinearVelocity * Settings.PredictionAmount end
-                    end
-                    cam.CFrame = cam.CFrame:Lerp(CFrame.new(cam.CFrame.Position, aimPos), 1 - Settings.Smoothness)
-                end
-            end
+        local lpChar = LocalPlayer.Character
+        local lpHum = lpChar and lpChar:FindFirstChildOfClass("Humanoid")
+        if lpHum and cam.CameraSubject ~= lpHum then
+            cam.CameraSubject = lpHum
+            cam.CameraType = Enum.CameraType.Custom
         end
 
-        if isPremium and Settings.Aimkill then
-            local t = GetTarget()
-            if t and t.Character then
-                local h = t.Character:FindFirstChildOfClass("Humanoid")
-                local part = t.Character:FindFirstChild(Settings.AimPart)
-                if h and h.Health > 0 and part then
-                    local aimPos = part.Position
-                    if Settings.Prediction then
-                        local hrp = t.Character:FindFirstChild("HumanoidRootPart")
-                        if hrp then aimPos = aimPos + hrp.AssemblyLinearVelocity * Settings.PredictionAmount end
-                    end
-                    cam.CFrame = cam.CFrame:Lerp(CFrame.new(cam.CFrame.Position, aimPos), 1)
-
-                    if tick() - lastShot >= Settings.AimkillDelay then
-                        lastShot = tick()
-                        fireWeapon()
-                    end
-
-                    if aimkillTarget ~= t then
-                        aimkillTarget = t
-                        aimkillStart = tick()
-                    end
-
-                    if Settings.AimkillAutoStop and (tick() - aimkillStart) >= Settings.AimkillKillTime then
-                        aimkillTarget = nil
-                        task.wait(0.5)
-                    end
-                else
-                    aimkillTarget = nil
+        -- AIMBOT FluxoPvP original: trava direto na cabeça sem smooth
+        if Settings.Aimbot then
+            local target = GetClosestPlayer()
+            if target and target.Character then
+                local head = target.Character:FindFirstChild("Head")
+                local humanoid = target.Character:FindFirstChildOfClass("Humanoid")
+                if head and humanoid and humanoid.Health > 0 then
+                    cam.CFrame = CFrame.new(cam.CFrame.Position, head.Position)
                 end
-            else
-                aimkillTarget = nil
             end
         end
     end)
@@ -521,51 +467,15 @@ safe(function()
 
     safe(function()
         CombatTab:CreateToggle({ name = "Aimbot (Lock na cabeca)", flag = "Aimbot", value = false, callback = function(v) Settings.Aimbot = v end })
-        CombatTab:CreateToggle({ name = "Team Check", flag = "TeamCheck", value = true, callback = function(v) Settings.TeamCheck = v end })
+        CombatTab:CreateToggle({ name = "Team Check", flag = "TeamCheck", value = false, callback = function(v) Settings.TeamCheck = v end })
         CombatTab:CreateToggle({ name = "Wall Check", flag = "WallCheck", value = false, callback = function(v) Settings.WallCheck = v end })
-        CombatTab:CreateToggle({ name = "Mostrar FOV", flag = "ShowFOV", value = true, callback = function(v) Settings.ShowFOV = v end })
-        CombatTab:CreateDropdown({
-            name = "Parte da mira",
-            flag = "AimPart",
-            options = {"Head", "UpperTorso", "HumanoidRootPart"},
-            value = "Head",
-            callback = function(v) Settings.AimPart = v end
-        })
+        CombatTab:CreateToggle({ name = "Ignorar Mortos", flag = "IgnoreDead", value = false, callback = function(v) Settings.IgnoreDead = v end })
+        CombatTab:CreateToggle({ name = "Mostrar FOV", flag = "ShowFOV", value = false, callback = function(v) Settings.ShowFOV = v end })
         CombatTab:CreateSlider({ name = "FOV", flag = "FOVSize", range = {30, 500}, increment = 1, value = 120, callback = function(v) Settings.FOVSize = v end })
-        CombatTab:CreateSlider({ name = "Suavizacao", flag = "Smoothness", range = {1, 100}, increment = 1, value = 35, callback = function(v) Settings.Smoothness = v / 100 end })
-        CombatTab:CreateToggle({ name = "Prediction", flag = "Prediction", value = false, callback = function(v) Settings.Prediction = v end })
     end)
 
     if isPremium and PremiumTab then
         safe(function()
-            PremiumTab:CreateToggle({
-                name = "AIMKILL (Auto Fire + Lock)",
-                flag = "Aimkill",
-                value = false,
-                callback = function(v) Settings.Aimkill = v end
-            })
-            PremiumTab:CreateSlider({
-                name = "Delay entre tiros (s)",
-                flag = "AimkillDelay",
-                range = {0.02, 1},
-                increment = 0.01,
-                value = 0.08,
-                callback = function(v) Settings.AimkillDelay = v end
-            })
-            PremiumTab:CreateSlider({
-                name = "Tempo de foco por alvo (s)",
-                flag = "AimkillKillTime",
-                range = {1, 10},
-                increment = 0.5,
-                value = 3,
-                callback = function(v) Settings.AimkillKillTime = v end
-            })
-            PremiumTab:CreateToggle({
-                name = "Auto-stop apos tempo",
-                flag = "AimkillAutoStop",
-                value = true,
-                callback = function(v) Settings.AimkillAutoStop = v end
-            })
             PremiumTab:CreateToggle({
                 name = "Silent Aim",
                 flag = "SilentAim",
@@ -573,14 +483,14 @@ safe(function()
                 callback = function(v) Settings.Silent = v end
             })
             PremiumTab:CreateDropdown({
-                name = "Silent - Parte do corpo",
+                name = "Parte do corpo",
                 flag = "SilentHitPart",
                 options = {"Head", "UpperTorso", "HumanoidRootPart", "LeftArm", "RightArm", "LeftLeg", "RightLeg"},
                 value = "Head",
                 callback = function(v) Settings.SilentHitPart = v end
             })
             PremiumTab:CreateSlider({
-                name = "Silent - Chance (%)",
+                name = "Chance (%)",
                 flag = "SilentChance",
                 range = {0, 100},
                 increment = 1,
@@ -588,7 +498,7 @@ safe(function()
                 callback = function(v) Settings.SilentChance = v end
             })
             PremiumTab:CreateSlider({
-                name = "Silent - Alcance",
+                name = "Alcance",
                 flag = "SilentRange",
                 range = {100, 5000},
                 increment = 50,
