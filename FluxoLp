@@ -18,9 +18,8 @@ local PREMIUM_USERS = {
 local isPremium = PREMIUM_USERS[LocalPlayer.Name] == true or LocalPlayer.UserId == 11242088349
 
 local Settings = {
-    Aimbot = false, AimPart = "Head", FOVSize = 120, ShowFOV = false,
-    TeamCheck = true, WallCheck = false, IgnoreDead = false,
-    Silent = false, SilentHitPart = "Head", SilentChance = 100, SilentRange = 500,
+    Silent = false, SilentHitPart = "Head", SilentChance = 85, SilentRange = 500,
+    SilentTeamCheck = true, SilentWallCheck = false,
     ESP_Master = false, ESP_Boxes = false, ESP_Lines = false, ESP_Names = false,
     ESP_Health = false, ESP_Ally = false, AllyColor = Color3.fromRGB(80, 180, 255),
     HitboxEnabled = false, HitboxSize = 3, HitboxVisible = false, HitboxTransparency = 0.5,
@@ -42,15 +41,12 @@ local Window = Fluent:CreateWindow({
 })
 
 local Tabs = {
-    Combat = Window:AddTab({ Title = "Combate", Icon = "crosshair" }),
+    Silent = Window:AddTab({ Title = "Silent", Icon = "target" }),
     Visuals = Window:AddTab({ Title = "Visuals", Icon = "eye" }),
     Hitbox = Window:AddTab({ Title = "Hitbox", Icon = "box" }),
     Misc = Window:AddTab({ Title = "Misc", Icon = "settings" }),
     Discord = Window:AddTab({ Title = "Discord", Icon = "disc" })
 }
-if isPremium then
-    Tabs.Premium = Window:AddTab({ Title = "Premium", Icon = "star" })
-end
 
 local function IsAlly(p)
     if not p or p == LocalPlayer then return false end
@@ -108,52 +104,27 @@ local function HasLOS(part)
     return r == nil
 end
 
-local function GetClosestPlayer()
-    local target = nil
-    local maxDist = Settings.FOVSize
-    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-
-    for _, p in ipairs(Services.Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character then
-            if Settings.TeamCheck and IsAlly(p) then continue end
-            local char = p.Character
-            local head = char:FindFirstChild("Head")
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            local root = char:FindFirstChild("HumanoidRootPart")
-            if head and hum and root then
-                if Settings.IgnoreDead then
-                    if hum.Health <= 0 or hum:GetState() == Enum.HumanoidStateType.Dead or not char:IsDescendantOf(workspace) then continue end
-                else
-                    if hum.Health <= 0 or hum:GetState() == Enum.HumanoidStateType.Dead then continue end
-                end
-                if Settings.WallCheck and not HasLOS(head) then continue end
-                local headPos, onScreen = Camera:WorldToViewportPoint(head.Position)
-                if onScreen then
-                    local d = (Vector2.new(headPos.X, headPos.Y) - center).Magnitude
-                    if d <= maxDist then maxDist = d; target = p end
-                end
-            end
-        end
-    end
-    return target
-end
-
 local function GetSilentTarget()
     local closest, shortest = nil, Settings.SilentRange
     local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
     for _, p in ipairs(Services.Players:GetPlayers()) do
         if p ~= LocalPlayer and p.Character then
-            if Settings.TeamCheck and IsAlly(p) then continue end
+            if Settings.SilentTeamCheck and IsAlly(p) then continue end
+
             local char = p.Character
             local hum = char:FindFirstChildOfClass("Humanoid")
             if hum and hum.Health > 0 then
                 local part = char:FindFirstChild(Settings.SilentHitPart)
                 if part then
-                    if Settings.WallCheck and not HasLOS(part) then continue end
+                    if Settings.SilentWallCheck and not HasLOS(part) then continue end
                     local sp, on = Camera:WorldToViewportPoint(part.Position)
                     if on then
                         local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
-                        if d < shortest then shortest = d; closest = p end
+                        if d < shortest then
+                            shortest = d
+                            closest = p
+                        end
                     end
                 end
             end
@@ -161,14 +132,6 @@ local function GetSilentTarget()
     end
     return closest
 end
-
-local FOVCircle = Drawing.new("Circle")
-FOVCircle.Color = Color3.fromRGB(255, 255, 255)
-FOVCircle.Thickness = 1.5
-FOVCircle.Filled = false
-FOVCircle.NumSides = 80
-FOVCircle.Transparency = 0.8
-FOVCircle.Visible = false
 
 local mt = getrawmetatable(game)
 local oldNamecall = mt.__namecall
@@ -180,18 +143,24 @@ mt.__namecall = newcclosure(function(self, ...)
         if target and target.Character then
             local part = target.Character:FindFirstChild(Settings.SilentHitPart)
             if part then
-                if math.random(1, 100) > Settings.SilentChance then return oldNamecall(self, ...) end
+                if math.random(1, 100) > Settings.SilentChance then
+                    return oldNamecall(self, ...)
+                end
                 local aimPos = part.Position
                 local args = {...}
                 local changed = false
                 for i, v in ipairs(args) do
                     if typeof(v) == "Vector3" then
-                        args[i] = aimPos; changed = true
+                        args[i] = aimPos
+                        changed = true
                     elseif typeof(v) == "CFrame" then
-                        args[i] = CFrame.lookAt(v.Position, aimPos); changed = true
+                        args[i] = CFrame.lookAt(v.Position, aimPos)
+                        changed = true
                     end
                 end
-                if changed then return oldNamecall(self, table.unpack(args)) end
+                if changed then
+                    return oldNamecall(self, table.unpack(args))
+                end
             end
         end
     end
@@ -199,28 +168,183 @@ mt.__namecall = newcclosure(function(self, ...)
 end)
 setreadonly(mt, true)
 
-Services.RunService.RenderStepped:Connect(function()
-    FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-    FOVCircle.Radius = Settings.FOVSize
-    FOVCircle.Visible = Settings.ShowFOV
+local ESPDrawings = {}
+local function CreateESP(player)
+    if ESPDrawings[player] then return end
+    local d = {
+        Box = Drawing.new("Square"),
+        Line = Drawing.new("Line"),
+        Name = Drawing.new("Text"),
+        Health = Drawing.new("Text")
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 
-    local lpHum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-    if lpHum and Camera.CameraSubject ~= lpHum then
-        Camera.CameraSubject = lpHum
-        Camera.CameraType = Enum.CameraType.Custom
-    end
+local Services = {
+    Players = game:GetService("Players"),
+    RunService = game:GetService("RunService"),
+    UserInputService = game:GetService("UserInputService"),
+    CoreGui = game:GetService("CoreGui")
+}
 
-    if Settings.Aimbot then
-        local target = GetClosestPlayer()
-        if target and target.Character then
-            local head = target.Character:FindFirstChild("Head")
-            local hum = target.Character:FindFirstChildOfClass("Humanoid")
-            if head and hum and hum.Health > 0 then
-                Camera.CFrame = CFrame.new(Camera.CFrame.Position, head.Position)
+local LocalPlayer = Services.Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local PREMIUM_USERS = {
+    ["rip_pportal"] = true,
+    ["Telanaoadm7"] = true,
+    ["Zemacumbia"] = true,
+}
+local isPremium = PREMIUM_USERS[LocalPlayer.Name] == true or LocalPlayer.UserId == 11242088349
+
+local Settings = {
+    Silent = false, SilentHitPart = "Head", SilentChance = 85, SilentRange = 500,
+    SilentTeamCheck = true, SilentWallCheck = false,
+    ESP_Master = false, ESP_Boxes = false, ESP_Lines = false, ESP_Names = false,
+    ESP_Health = false, ESP_Ally = false, AllyColor = Color3.fromRGB(80, 180, 255),
+    HitboxEnabled = false, HitboxSize = 3, HitboxVisible = false, HitboxTransparency = 0.5,
+    Speed = false, SpeedValue = 16,
+    NoClip = false
+}
+
+local OriginalHitbox = {}
+local executorEscondido = false
+local guisEscondidos = {}
+
+local Window = Fluent:CreateWindow({
+    Title = "LpMods",
+    SubTitle = "by LpMods",
+    TabWidth = 140,
+    Size = UDim2.fromOffset(530, 400),
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.LeftControl
+})
+
+local Tabs = {
+    Silent = Window:AddTab({ Title = "Silent", Icon = "target" }),
+    Visuals = Window:AddTab({ Title = "Visuals", Icon = "eye" }),
+    Hitbox = Window:AddTab({ Title = "Hitbox", Icon = "box" }),
+    Misc = Window:AddTab({ Title = "Misc", Icon = "settings" }),
+    Discord = Window:AddTab({ Title = "Discord", Icon = "disc" })
+}
+
+local function IsAlly(p)
+    if not p or p == LocalPlayer then return false end
+    if not LocalPlayer.Team then return false end
+    if p.Team and p.Team == LocalPlayer.Team then return true end
+    if p.TeamColor and LocalPlayer.TeamColor and p.TeamColor == LocalPlayer.TeamColor then return true end
+    return false
+end
+
+local function ehChat(n)
+    n = n:lower()
+    return n:find("chat") or n:find("bubble") or n:find("textchat") or n:find("topbar")
+end
+
+local function definirVisibilidadeExecutor(vis)
+    local eg = gethui and gethui() or Services.CoreGui
+    if not eg then return end
+    if vis then
+        for _, gui in pairs(guisEscondidos) do
+            pcall(function() gui.Enabled = true end)
+        end
+        guisEscondidos = {}
+    else
+        guisEscondidos = {}
+        for _, item in pairs(eg:GetChildren()) do
+            if item:IsA("ScreenGui") and not ehChat(item.Name) then
+                if item.Enabled then item.Enabled = false; table.insert(guisEscondidos, item) end
+            end
+        end
+        for _, item in pairs(Services.CoreGui:GetChildren()) do
+            if item:IsA("ScreenGui")
+                and item.Name ~= "LpModsDiscordBtn"
+                and not item.Name:find("Fluent")
+                and not ehChat(item.Name) then
+                if item.Enabled then item.Enabled = false; table.insert(guisEscondidos, item) end
             end
         end
     end
+end
+
+LocalPlayer.Chatted:Connect(function(msg)
+    local cmd = msg:lower():gsub("^%s*(.-)%s*$", "%1")
+    if cmd == ".hub" then definirVisibilidadeExecutor(true); executorEscondido = false
+    elseif cmd == ".hide" then definirVisibilidadeExecutor(false); executorEscondido = true end
 end)
+
+local function HasLOS(part)
+    if not part then return false end
+    local char = LocalPlayer.Character
+    local origin = Camera.CFrame.Position
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = { char, part.Parent }
+    local r = workspace:Raycast(origin, part.Position - origin, params)
+    return r == nil
+end
+
+local function GetSilentTarget()
+    local closest, shortest = nil, Settings.SilentRange
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+    for _, p in ipairs(Services.Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then
+            if Settings.SilentTeamCheck and IsAlly(p) then continue end
+
+            local char = p.Character
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                local part = char:FindFirstChild(Settings.SilentHitPart)
+                if part then
+                    if Settings.SilentWallCheck and not HasLOS(part) then continue end
+                    local sp, on = Camera:WorldToViewportPoint(part.Position)
+                    if on then
+                        local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+                        if d < shortest then
+                            shortest = d
+                            closest = p
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return closest
+end
+
+local mt = getrawmetatable(game)
+local oldNamecall = mt.__namecall
+setreadonly(mt, false)
+mt.__namecall = newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    if isPremium and Settings.Silent and method == "FireServer" and self:IsA("RemoteEvent") then
+        local target = GetSilentTarget()
+        if target and target.Character then
+            local part = target.Character:FindFirstChild(Settings.SilentHitPart)
+            if part then
+                if math.random(1, 100) > Settings.SilentChance then
+                    return oldNamecall(self, ...)
+                end
+                local aimPos = part.Position
+                local args = {...}
+                local changed = false
+                for i, v in ipairs(args) do
+                    if typeof(v) == "Vector3" then
+                        args[i] = aimPos
+                        changed = true
+                    elseif typeof(v) == "CFrame" then
+                        args[i] = CFrame.lookAt(v.Position, aimPos)
+                        changed = true
+                    end
+                end
+                if changed then
+                    return oldNamecall(self, table.unpack(args))
+                end
+            end
+        end
+    end
+    return oldNamecall(self, ...)
+end)
+setreadonly(mt, true)
 
 local ESPDrawings = {}
 local function CreateESP(player)
@@ -257,6 +381,7 @@ Services.RunService.RenderStepped:Connect(function()
             local hum = char and char:FindFirstChildOfClass("Humanoid")
             local ally = IsAlly(p)
             local render = (ally and Settings.ESP_Ally) or (not ally and Settings.ESP_Master)
+
             if render and char and hum and hum.Health > 0 then
                 local cf, size = char:GetBoundingBox()
                 local sp, on = Camera:WorldToViewportPoint(cf.Position)
@@ -268,21 +393,28 @@ Services.RunService.RenderStepped:Connect(function()
                     local bs = Camera:WorldToViewportPoint(botW)
                     local hgt = math.abs(ts.Y - bs.Y)
                     local wd = hgt / 1.6
+
                     if Settings.ESP_Boxes then
                         d.Box.Size = Vector2.new(wd, hgt)
                         d.Box.Position = Vector2.new(sp.X - wd / 2, ts.Y)
-                        d.Box.Color = col; d.Box.Visible = true
+                        d.Box.Color = col
+                        d.Box.Visible = true
                     else d.Box.Visible = false end
+
                     if Settings.ESP_Lines then
                         d.Line.From = Vector2.new(center.X, Camera.ViewportSize.Y)
                         d.Line.To = Vector2.new(sp.X, bs.Y)
-                        d.Line.Color = col; d.Line.Visible = true
+                        d.Line.Color = col
+                        d.Line.Visible = true
                     else d.Line.Visible = false end
+
                     if Settings.ESP_Names then
                         d.Name.Text = p.Name .. (ally and " [ALLY]" or "")
                         d.Name.Position = Vector2.new(sp.X, ts.Y - 16)
-                        d.Name.Color = col; d.Name.Visible = true
+                        d.Name.Color = col
+                        d.Name.Visible = true
                     else d.Name.Visible = false end
+
                     if Settings.ESP_Health then
                         d.Health.Text = math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth)
                         d.Health.Position = Vector2.new(sp.X, bs.Y + 2)
@@ -414,32 +546,81 @@ DBtn.MouseButton1Click:Connect(function()
     task.delay(2, function() DBtn.Text = "discord.gg/Pga8XBq" end)
 end)
 
--- UI - COMBATE
-Tabs.Combat:AddToggle("Aimbot", { Title = "Aimbot (Lock na cabeca)", Default = false, Callback = function(v) Settings.Aimbot = v end })
-Tabs.Combat:AddToggle("TeamCheck", { Title = "Team Check (nao mira aliado)", Default = true, Callback = function(v) Settings.TeamCheck = v end })
-Tabs.Combat:AddToggle("WallCheck", { Title = "Wall Check", Default = false, Callback = function(v) Settings.WallCheck = v end })
-Tabs.Combat:AddToggle("IgnoreDead", { Title = "Ignorar Mortos", Default = false, Callback = function(v) Settings.IgnoreDead = v end })
-Tabs.Combat:AddToggle("ShowFOV", { Title = "Mostrar FOV", Default = false, Callback = function(v) Settings.ShowFOV = v end })
-Tabs.Combat:AddSlider("FOVSize", { Title = "FOV", Min = 30, Max = 500, Default = 120, Rounding = 0, Callback = function(v) Settings.FOVSize = v end })
-
--- UI - PREMIUM
-if isPremium and Tabs.Premium then
-    Tabs.Premium:AddToggle("Silent", { Title = "Silent Aim (Premium)", Default = false, Callback = function(v) Settings.Silent = v end })
-    Tabs.Premium:AddDropdown("SilentHitPart", {
+if isPremium then
+    Tabs.Silent:AddToggle("SilentAim", { Title = "Silent Aim (Premium)", Default = false, Callback = function(v) Settings.Silent = v end })
+    Tabs.Silent:AddDropdown("SilentHitPart", {
         Title = "Parte do corpo",
         Values = {"Head", "UpperTorso", "HumanoidRootPart", "LeftArm", "RightArm", "LeftLeg", "RightLeg"},
         Default = "Head",
         Multi = false,
         Callback = function(v) Settings.SilentHitPart = v end
     })
-    Tabs.Premium:AddSlider("SilentChance", { Title = "Chance (%)", Min = 0, Max = 100, Default = 100, Rounding = 0, Callback = function(v) Settings.SilentChance = v end })
-    Tabs.Premium:AddSlider("SilentRange", { Title = "Alcance", Min = 100, Max = 5000, Default = 500, Rounding = 50, Callback = function(v) Settings.SilentRange = v end })
+    Tabs.Silent:AddSlider("SilentChance", { Title = "Chance de acerto (%)", Min = 0, Max = 100, Default = 85, Rounding = 0, Callback = function(v) Settings.SilentChance = v end })
+    Tabs.Silent:AddSlider("SilentRange", { Title = "Alcance", Min = 100, Max = 5000, Default = 500, Rounding = 50, Callback = function(v) Settings.SilentRange = v end })
+    Tabs.Silent:AddToggle("SilentTeamCheck", { Title = "Team Check (nao mira aliado)", Default = true, Callback = function(v) Settings.SilentTeamCheck = v end })
+    Tabs.Silent:AddToggle("SilentWallCheck", { Title = "Wall Check", Default = false, Callback = function(v) Settings.SilentWallCheck = v end })
+else
+    Tabs.Silent:AddButton({
+        Title = "FUNCAO PREMIUM - Clique",
+        Description = "Pede acesso no Discord",
+        Callback = function()
+            Fluent:Notify({ Title = "Premium", Content = "Silent Aim e exclusivo. discord.gg/Pga8XBq", Duration = 5 })
+        end
+    })
 end
 
--- UI - VISUALS
 Tabs.Visuals:AddToggle("ESPMaster", { Title = "ESP Master", Default = false, Callback = function(v) Settings.ESP_Master = v end })
 Tabs.Visuals:AddToggle("ESPAlly", { Title = "ESP Aliado (cor azul)", Default = false, Callback = function(v) Settings.ESP_Ally = v end })
 Tabs.Visuals:AddToggle("ESPBoxes", { Title = "ESP Boxes", Default = false, Callback = function(v) Settings.ESP_Boxes = v end })
+Tabs.Visuals:AddToggle("ESPLines", { Title = "ESP Lines", Default = false, Callback = function(v) Settings.ESP_Lines = v end })
+Tabs.Visuals:AddToggle("ESPNames", { Title = "ESP Nome", Default = false, Callback = function(v) Settings.ESP_Names = v end })
+Tabs.Visuals:AddToggle("ESPHealth", { Title = "ESP Vida", Default = false, Callback = function(v) Settings.ESP_Health = v end })
+
+Tabs.Hitbox:AddToggle("HitboxEnabled", {
+    Title = "Ativar Hitbox Expandida", Default = false,
+    Callback = function(v)
+        Settings.HitboxEnabled = v
+        if not v then RestoreAll() end
+    end
+})
+Tabs.Hitbox:AddSlider("HitboxSize", { Title = "Tamanho", Min = 1, Max = 50, Default = 3, Rounding = 1, Callback = function(v) Settings.HitboxSize = v end })
+Tabs.Hitbox:AddToggle("HitboxVisible", { Title = "Visual", Default = false, Callback = function(v) Settings.HitboxVisible = v end })
+Tabs.Hitbox:AddButton({ Title = "Restaurar Hitboxes", Callback = function() RestoreAll() end })
+
+Tabs.Misc:AddToggle("Speed", { Title = "Speed", Default = false, Callback = function(v) Settings.Speed = v end })
+Tabs.Misc:AddSlider("SpeedValue", { Title = "Velocidade", Min = 16, Max = 300, Default = 16, Rounding = 0, Callback = function(v) Settings.SpeedValue = v end })
+Tabs.Misc:AddToggle("NoClip", { Title = "NoClip", Default = false, Callback = function(v) Settings.NoClip = v end })
+Tabs.Misc:AddButton({
+    Title = "Esconder Executor",
+    Callback = function()
+        executorEscondido = not executorEscondido
+        definirVisibilidadeExecutor(not executorEscondido)
+    end
+})
+
+Tabs.Discord:AddButton({
+    Title = "Copiar Link do Discord",
+    Description = "discord.gg/Pga8XBq",
+    Callback = function()
+        setclipboard("https://discord.gg/Pga8XBq")
+        Fluent:Notify({ Title = "LpMods", Content = "Link copiado!", Duration = 3 })
+    end
+})
+
+task.spawn(function()
+    task.wait(1)
+    for _, gui in pairs(Services.CoreGui:GetChildren()) do
+        if gui:IsA("ScreenGui") and gui.Name:find("Fluent") then
+            for _, v in pairs(gui:GetDescendants()) do
+                if v:IsA("Frame") and (v.Name:find("Slider") or v.Name:find("Bar")) then
+                    v.Active = true
+                end
+            end
+        end
+    end
+end)
+
+Fluent:Notify({ Title = "LpMods", Content = "Script carregado.", Duration = 4 })gle("ESPBoxes", { Title = "ESP Boxes", Default = false, Callback = function(v) Settings.ESP_Boxes = v end })
 Tabs.Visuals:AddToggle("ESPLines", { Title = "ESP Lines", Default = false, Callback = function(v) Settings.ESP_Lines = v end })
 Tabs.Visuals:AddToggle("ESPNames", { Title = "ESP Nome", Default = false, Callback = function(v) Settings.ESP_Names = v end })
 Tabs.Visuals:AddToggle("ESPHealth", { Title = "ESP Vida", Default = false, Callback = function(v) Settings.ESP_Health = v end })
